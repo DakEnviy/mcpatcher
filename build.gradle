@@ -1,0 +1,175 @@
+// version: 1
+/*
+    DO NOT CHANGE THIS FILE!
+    Also, you may replace this file at any time if there is an update available.
+    Please check https://github.com/DakEnviy/ExampleMod for updates.
+*/
+
+buildscript {
+    repositories {
+        mavenCentral()
+        maven {
+            name = "forge"
+            url = "https://maven.minecraftforge.net/"
+        }
+        maven {
+            name = "sonatype"
+            url = "https://oss.sonatype.org/content/repositories/snapshots/"
+        }
+    }
+    dependencies {
+        // Use custom ForgeGradle to use latest version of Gradle
+        classpath("com.anatawa12.forge:ForgeGradle:1.2-1.0.+") {
+            changing = true
+        }
+    }
+}
+
+apply plugin: "forge"
+
+// These settings allow you to choose what version of Java you want to be compatible with,
+// Forge 1.7.10 runs on Java 6 to 8
+sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
+
+compileJava {
+    // Ensures that the encoding of source files is set to UTF-8,
+    // see http://yodaconditions.net/blog/fix-for-java-file-encoding-problems-with-gradle.html
+    options.encoding = "UTF-8"
+}
+
+if (JavaVersion.current() != JavaVersion.VERSION_1_8) {
+    throw new GradleException("This project requires Java 8, but it's running on ${JavaVersion.current()}")
+}
+
+checkPropertyExists("modName")
+checkPropertyExists("modGroup")
+checkPropertyExists("modId")
+checkPropertyExists("versionMajor")
+checkPropertyExists("versionMinor")
+checkPropertyExists("versionPatch")
+checkPropertyExists("minecraftVersion")
+checkPropertyExists("forgeVersion")
+checkPropertyExists("username")
+checkPropertyExists("jvmInitMemory")
+checkPropertyExists("jvmMaxMemory")
+
+def javaSourceDir = "src/main/java"
+def targetPackageJava = "${javaSourceDir}/${modGroup.replaceAll("\\.", "/")}"
+
+if (!getFile(targetPackageJava).exists()) {
+    throw new GradleException("Could not resolve \"modGroup\"! Could not find ${targetPackageJava}")
+}
+
+def isDev = System.getenv("PRODUCTION") == null
+
+version = "${versionMajor}.${versionMinor}.${versionPatch}"
+group = modGroup
+archivesBaseName = modId
+
+if (isDev) {
+    version += "-INDEV"
+}
+
+repositories {
+    flatDir {
+        dirs "lib"
+    }
+}
+
+apply from: 'dependencies.gradle'
+
+minecraft {
+    version = "${minecraftVersion}-${forgeVersion}-${minecraftVersion}"
+    runDir = "run"
+
+    replace "@modId@", modId
+    replace "@modName@", modName
+    replace "@version@", project.version
+    replace "@modGroup@", modGroup
+    replace "@minecraftVersion@", minecraftVersion
+    replace "@forgeVersion@", forgeVersion
+}
+
+// Collect JVM arguments
+def jvmArguments = []
+
+if (jvmInitMemory) {
+    jvmArguments.add("-Xms${jvmInitMemory}")
+}
+
+if (jvmMaxMemory) {
+    jvmArguments.add("-Xmx${jvmMaxMemory}")
+}
+
+runClient {
+    jvmArgs jvmArguments
+
+    if (username) {
+        args "--username", username
+    }
+}
+
+runServer {
+    jvmArgs jvmArguments
+}
+
+// Collect manifest attributes
+def manifestAttributes = [:]
+
+def atFilename = "${modId}_at.cfg"
+
+if (getFile("src/main/resources/META-INF/${atFilename}").exists()) {
+    manifestAttributes += ["FMLAT": atFilename]
+}
+
+jar {
+    manifest {
+        attributes manifestAttributes
+    }
+}
+
+// This task creates a .jar file containing a deobfuscated version of this mod,
+// for other developers to use in a development environment.
+task devJar(type: Jar) {
+    classifier "dev"
+    from sourceSets.main.output
+
+    manifest {
+        attributes manifestAttributes
+    }
+}
+
+// This task creates a .jar file containing the source code of this mod
+task sourcesJar(type: Jar) {
+    classifier "sources"
+    from sourceSets.main.allSource
+}
+
+artifacts {
+    archives devJar
+    archives sourcesJar
+}
+
+processResources {
+    // This will ensure that this task is redone when the versions change
+    inputs.property "version", project.version
+    inputs.property "mcversion", project.minecraft.version
+
+    // Replace values in only mcmod.info
+    filesMatching("mcmod.info") {
+        // Replace version and mcversion
+        expand "modid": modId, "name": modName, "version": project.version, "mcversion": project.minecraft.version
+    }
+}
+
+// Helpers
+
+def checkPropertyExists(String propertyName) {
+    if (!project.hasProperty(propertyName)) {
+        throw new GradleException("This project requires a property \"${propertyName}\"! Please add it to your \"gradle.properties\"")
+    }
+}
+
+def getFile(String relativePath) {
+    return new File(projectDir, relativePath)
+}

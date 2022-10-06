@@ -1,0 +1,7 @@
+repositories {
+    // Your repositories here
+}
+
+dependencies {
+    // Your dependencies here
+}
