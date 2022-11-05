@@ -41,7 +41,7 @@ checkPropertyExists("versionPatch")
 checkPropertyExists("minecraftVersion")
 checkPropertyExists("forgeVersion")
 
-version = "${versionMajor}.${versionMinor}.${versionPatch}"
+version = "${minecraftVersion}-${versionMajor}.${versionMinor}.${versionPatch}"
 group = "tech.dakenviy.patcher"
 archivesBaseName = "mcpatcher"
 
