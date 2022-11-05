@@ -1,4 +1,4 @@
-// version: 1
+// version: 4
 /*
     DO NOT CHANGE THIS FILE!
     Also, you may replace this file at any time if there is an update available.
@@ -12,10 +12,6 @@ buildscript {
             name = "forge"
             url = "https://maven.minecraftforge.net/"
         }
-        maven {
-            name = "sonatype"
-            url = "https://oss.sonatype.org/content/repositories/snapshots/"
-        }
     }
     dependencies {
         // Use custom ForgeGradle to use latest version of Gradle
@@ -23,6 +19,11 @@ buildscript {
             changing = true
         }
     }
+}
+
+plugins {
+    id "java"
+    id "maven-publish"
 }
 
 apply plugin: "forge"
@@ -52,13 +53,8 @@ checkPropertyExists("forgeVersion")
 checkPropertyExists("username")
 checkPropertyExists("jvmInitMemory")
 checkPropertyExists("jvmMaxMemory")
-
-def javaSourceDir = "src/main/java"
-def targetPackageJava = "${javaSourceDir}/${modGroup.replaceAll("\\.", "/")}"
-
-if (!getFile(targetPackageJava).exists()) {
-    throw new GradleException("Could not resolve \"modGroup\"! Could not find ${targetPackageJava}")
-}
+checkPropertyExists("debugMixins")
+checkPropertyExists("publishToGitlab")
 
 def isDev = System.getenv("PRODUCTION") == null
 
@@ -70,13 +66,40 @@ if (isDev) {
     version += "-INDEV"
 }
 
+def javaSourceDir = "src/main/java"
+def resourcesDir = "src/main/resources"
+
+def javaPackage = "${javaSourceDir}/${modGroup.replaceAll("\\.", "/")}"
+
+if (!getFile(javaPackage).exists()) {
+    throw new GradleException("Could not resolve \"modGroup\"! Could not find ${javaPackage}")
+}
+
+def atFilename = "${modId}_at.cfg"
+def atPath = "${resourcesDir}/META-INF/${atFilename}"
+def mixinPackagePath = "${javaPackage}/asm/mixins"
+def mixinConfigPath = "${resourcesDir}/mixins.${modId}.json"
+def pluginPath = "${javaPackage}/${modName}Plugin.java"
+
+def hasAt = getFile(atPath).exists()
+def hasMixins = getFile(mixinPackagePath).exists()
+def hasPlugin = getFile(pluginPath).exists() || hasMixins
+
+if (hasMixins) {
+    initMixinConfig(mixinConfigPath)
+    initPluginForMixin(pluginPath, modGroup)
+
+    // Apply third-party configuration for mixins
+    apply from: "https://raw.githubusercontent.com/tox1cozZ/mixin-booter-legacy/master/gradle/configurations/v1.gradle"
+}
+
 repositories {
     flatDir {
         dirs "lib"
     }
 }
 
-apply from: 'dependencies.gradle'
+apply from: "dependencies.gradle"
 
 minecraft {
     version = "${minecraftVersion}-${forgeVersion}-${minecraftVersion}"
@@ -101,6 +124,14 @@ if (jvmMaxMemory) {
     jvmArguments.add("-Xmx${jvmMaxMemory}")
 }
 
+if (hasMixins && debugMixins.toBoolean()) {
+    jvmArguments += [
+            "-Dmixin.debug.countInjections=true",
+            "-Dmixin.debug.verbose=true",
+            "-Dmixin.debug.export=true"
+    ]
+}
+
 runClient {
     jvmArgs jvmArguments
 
@@ -116,10 +147,15 @@ runServer {
 // Collect manifest attributes
 def manifestAttributes = [:]
 
-def atFilename = "${modId}_at.cfg"
-
-if (getFile("src/main/resources/META-INF/${atFilename}").exists()) {
+if (hasAt) {
     manifestAttributes += ["FMLAT": atFilename]
+}
+
+if (hasPlugin || hasMixins) {
+    manifestAttributes += [
+            "FMLCorePlugin": "${modGroup}.${modName}Plugin",
+            "FMLCorePluginContainsFMLMod": "true"
+    ]
 }
 
 jar {
@@ -155,10 +191,79 @@ processResources {
     inputs.property "version", project.version
     inputs.property "mcversion", project.minecraft.version
 
-    // Replace values in only mcmod.info
     filesMatching("mcmod.info") {
-        // Replace version and mcversion
         expand "modid": modId, "name": modName, "version": project.version, "mcversion": project.minecraft.version
+    }
+
+    if (hasMixins) {
+        def mixinPackage = "${modGroup}.asm.mixins"
+        def mixinRefmap = tasks.mixin.mixinRefMapName.get()
+
+        inputs.property "mixin_package", mixinPackage
+        inputs.property "mixin_refmap", mixinRefmap
+
+        filesMatching("mixins.*.json") {
+            expand "mixin_package": mixinPackage, "mixin_refmap": mixinRefmap
+        }
+    }
+}
+
+// Workaround variable hiding in pom processing
+def projectConfigurations = project.configurations
+
+publishing {
+    def serverUrl = System.getenv("CI_SERVER_URL")
+    def projectId = System.getenv("CI_PROJECT_ID")
+    def jobToken = System.getenv("CI_JOB_TOKEN")
+
+    if (publishToGitlab.toBoolean() && serverUrl != null && projectId != null && jobToken != null) {
+        publications {
+            maven(MavenPublication) {
+                from components.java
+
+                artifact source: devJar, classifier: "dev"
+                artifact source: sourcesJar, classifier: "sources"
+
+                // remove extra garbage from minecraft and minecraftDeps configuration
+                pom.withXml {
+                    def badArtifacts = [:].withDefault { [] as Set<String> }
+
+                    for (configuration in [projectConfigurations.minecraft, projectConfigurations.minecraftDeps]) {
+                        for (dependency in configuration.allDependencies) {
+                            if (dependency.group != null) {
+                                badArtifacts[dependency.group] += dependency.name
+                            }
+                        }
+                    }
+
+                    // example for specifying extra stuff to ignore
+                    // badArtifacts["org.example.group"] += "artifactName"
+
+                    def pomNode = asNode()
+
+                    pomNode.dependencies.'*'.findAll() {
+                        badArtifacts[it.groupId.text()].contains(it.artifactId.text())
+                    }.each() {
+                        it.parent().remove(it)
+                    }
+                }
+            }
+        }
+
+        repositories {
+            maven {
+                url "${serverUrl}/api/v4/projects/${projectId}/packages/maven"
+
+                credentials(HttpHeaderCredentials) {
+                    name = "Job-Token"
+                    value = jobToken
+                }
+
+                authentication {
+                    header(HttpHeaderAuthentication)
+                }
+            }
+        }
     }
 }
 
@@ -172,4 +277,75 @@ def checkPropertyExists(String propertyName) {
 
 def getFile(String relativePath) {
     return new File(projectDir, relativePath)
+}
+
+def initMixinConfig(String filepath) {
+    def mixinConfigFile = getFile(filepath)
+
+    if (!mixinConfigFile.exists()) {
+        mixinConfigFile.text = """{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "\${mixin_package}",
+  "refmap": "\${mixin_refmap}",
+  "target": "@env(DEFAULT)",
+  "compatibilityLevel": "JAVA_8",
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "mixins": [],
+  "client": [],
+  "server": []
+}"""
+    }
+}
+
+def initPluginForMixin(String filepath, String modGroup) {
+    def pluginFile = getFile(filepath)
+
+    if (!pluginFile.exists()) {
+        pluginFile.text = """package ${modGroup};
+
+import cpw.mods.fml.relauncher.IFMLLoadingPlugin;
+import io.github.tox1cozz.mixinbooterlegacy.IEarlyMixinLoader;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+@IFMLLoadingPlugin.Name("@modName@")
+@IFMLLoadingPlugin.MCVersion("@minecraftVersion@")
+public class EnderFuturePlugin implements IFMLLoadingPlugin, IEarlyMixinLoader {
+
+    @Override
+    public String[] getASMTransformerClass() {
+        return new String[0];
+    }
+
+    @Override
+    public String getModContainerClass() {
+        return null;
+    }
+
+    @Override
+    public String getSetupClass() {
+        return null;
+    }
+
+    @Override
+    public void injectData(Map<String, Object> data) {
+    }
+
+    @Override
+    public String getAccessTransformerClass() {
+        return null;
+    }
+
+    @Override
+    public List<String> getMixinConfigs() {
+        return Collections.singletonList("mixins.@modId@.json");
+    }
+}
+"""
+    }
 }
