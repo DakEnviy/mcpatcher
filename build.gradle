@@ -123,6 +123,7 @@ publishing {
 
         if (publishToGitlab.toBoolean() && serverUrl != null && projectId != null && jobToken != null) {
             maven {
+                name "GitlabPackages"
                 url "${serverUrl}/api/v4/projects/${projectId}/packages/maven"
 
                 credentials(HttpHeaderCredentials) {
