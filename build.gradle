@@ -87,7 +87,6 @@ publishing {
             artifact source: devJar, classifier: "dev"
             artifact source: sourcesJar, classifier: "sources"
 
-            // remove extra garbage from minecraft and minecraftDeps configuration
             pom.withXml {
                 def badArtifacts = [:].withDefault { [] as Set<String> }
 
@@ -104,11 +103,15 @@ publishing {
 
                 def pomNode = asNode()
 
+                // remove extra garbage from minecraft and minecraftDeps configuration
                 pomNode.dependencies.'*'.findAll() {
                     badArtifacts[it.groupId.text()].contains(it.artifactId.text())
                 }.each() {
                     it.parent().remove(it)
                 }
+
+                // Add groupId to forgeSrc dependency because it is required by specification
+                pomNode.dependencies."*".find() { it.artifactId.text() == "forgeSrc" }.appendNode("groupId", "")
             }
         }
     }
