@@ -5,7 +5,6 @@ import cpw.mods.fml.common.event.*;
 import cpw.mods.fml.common.Mod;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import tech.dakenviy.examplemod.common.CommonProxy;
 
 @Mod(
     modid = ExampleMod.MOD_ID,
@@ -23,7 +22,7 @@ public class ExampleMod {
     @Mod.Instance(MOD_ID)
     public static ExampleMod INSTANCE;
 
-    @SidedProxy(clientSide = "@modGroup@.client.ClientProxy", serverSide = "@modGroup@.common.CommonProxy")
+    @SidedProxy(clientSide = "@modGroup@.client.ClientProxy", serverSide = "@modGroup@.CommonProxy")
     public static CommonProxy PROXY;
 
     public static Logger LOGGER = LogManager.getLogger(MOD_ID);

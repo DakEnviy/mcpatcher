@@ -1,14 +1,14 @@
-package tech.dakenviy.examplemod.common;
+package tech.dakenviy.examplemod;
 
 import cpw.mods.fml.common.event.*;
 
 public class CommonProxy {
 
-    // Read config, create and register blocks, items, entity, tile entity, ore dictionary
+    // Read config, create and register blocks, items, entities, tile entities, biomes, work with ore dictionary, init network
     public void preInit(FMLPreInitializationEvent event) {
     }
 
-    // Register structure
+    // Register structures, listeners, spawns
     public void init(FMLInitializationEvent event) {
     }
 
