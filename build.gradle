@@ -92,9 +92,7 @@ publishing {
 
                 for (configuration in [projectConfigurations.minecraft, projectConfigurations.minecraftDeps]) {
                     for (dependency in configuration.allDependencies) {
-                        if (dependency.group != null) {
-                            badArtifacts[dependency.group] += dependency.name
-                        }
+                        badArtifacts[dependency.group == null ? "" : dependency.group] += dependency.name
                     }
                 }
 
@@ -109,13 +107,6 @@ publishing {
                 }.each() {
                     it.parent().remove(it)
                 }
-
-                // Add groupId to forge dependency because it is required by specification
-                pomNode.dependencies."*".find() {
-                    def artifactId = it.artifactId.text()
-
-                    artifactId == "forgeBin" || artifactId == "forgeSrc"
-                }.appendNode("groupId", "")
             }
         }
     }
