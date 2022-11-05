@@ -76,8 +76,10 @@ artifacts {
     archives sourcesJar
 }
 
-// Workaround variable hiding in pom processing
-def projectConfigurations = project.configurations
+// Disable generating module file because it has broken dependencies
+tasks.withType(GenerateModuleMetadata) {
+    enabled = false
+}
 
 publishing {
     publications {
@@ -88,13 +90,7 @@ publishing {
             artifact source: sourcesJar, classifier: "sources"
 
             pom.withXml {
-                def badArtifacts = [:].withDefault { [] as Set<String> }
-
-                for (configuration in [projectConfigurations.minecraft, projectConfigurations.minecraftDeps]) {
-                    for (dependency in configuration.allDependencies) {
-                        badArtifacts[dependency.group == null ? "" : dependency.group] += dependency.name
-                    }
-                }
+                def minecraftDependencies = getMinecraftDependencies()
 
                 // example for specifying extra stuff to ignore
                 // badArtifacts["org.example.group"] += "artifactName"
@@ -103,7 +99,7 @@ publishing {
 
                 // remove extra garbage from minecraft and minecraftDeps configuration
                 pomNode.dependencies.'*'.findAll() {
-                    badArtifacts[it.groupId.text()].contains(it.artifactId.text())
+                    minecraftDependencies[it.groupId.text()].contains(it.artifactId.text())
                 }.each() {
                     it.parent().remove(it)
                 }
@@ -122,4 +118,16 @@ def checkPropertyExists(String propertyName) {
     if (!project.hasProperty(propertyName)) {
         throw new GradleException("This project requires a property \"${propertyName}\"! Please add it to your \"gradle.properties\"")
     }
+}
+
+def getMinecraftDependencies() {
+    def result = [:].withDefault { [] as Set<String> }
+
+    for (configuration in [configurations.minecraft, configurations.minecraftDeps]) {
+        for (dependency in configuration.allDependencies) {
+            result[dependency.group] += dependency.name
+        }
+    }
+
+    return result
 }
