@@ -110,8 +110,12 @@ publishing {
                     it.parent().remove(it)
                 }
 
-                // Add groupId to forgeSrc dependency because it is required by specification
-                pomNode.dependencies."*".find() { it.artifactId.text() == "forgeSrc" }.appendNode("groupId", "")
+                // Add groupId to forge dependency because it is required by specification
+                pomNode.dependencies."*".find() {
+                    def artifactId = it.artifactId.text()
+
+                    artifactId == "forgeBin" || artifactId == "forgeSrc"
+                }.appendNode("groupId", "")
             }
         }
     }
