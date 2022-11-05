@@ -125,7 +125,7 @@ def getMinecraftDependencies() {
 
     for (configuration in [configurations.minecraft, configurations.minecraftDeps]) {
         for (dependency in configuration.allDependencies) {
-            result[dependency.group] += dependency.name
+            result[dependency.group == null ? "" : dependency.group] += dependency.name
         }
     }
 
