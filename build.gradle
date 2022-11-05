@@ -81,45 +81,47 @@ artifacts {
 def projectConfigurations = project.configurations
 
 publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+
+            artifact source: devJar, classifier: "dev"
+            artifact source: sourcesJar, classifier: "sources"
+
+            // remove extra garbage from minecraft and minecraftDeps configuration
+            pom.withXml {
+                def badArtifacts = [:].withDefault { [] as Set<String> }
+
+                for (configuration in [projectConfigurations.minecraft, projectConfigurations.minecraftDeps]) {
+                    for (dependency in configuration.allDependencies) {
+                        if (dependency.group != null) {
+                            badArtifacts[dependency.group] += dependency.name
+                        }
+                    }
+                }
+
+                // example for specifying extra stuff to ignore
+                // badArtifacts["org.example.group"] += "artifactName"
+
+                def pomNode = asNode()
+
+                pomNode.dependencies.'*'.findAll() {
+                    badArtifacts[it.groupId.text()].contains(it.artifactId.text())
+                }.each() {
+                    it.parent().remove(it)
+                }
+            }
+        }
+    }
+
     def serverUrl = System.getenv("CI_SERVER_URL")
     def projectId = System.getenv("CI_PROJECT_ID")
     def jobToken = System.getenv("CI_JOB_TOKEN")
 
-    if (publishToGitlab.toBoolean() && serverUrl != null && projectId != null && jobToken != null) {
-        publications {
-            maven(MavenPublication) {
-                from components.java
+    repositories {
+        mavenLocal()
 
-                artifact source: devJar, classifier: "dev"
-                artifact source: sourcesJar, classifier: "sources"
-
-                // remove extra garbage from minecraft and minecraftDeps configuration
-                pom.withXml {
-                    def badArtifacts = [:].withDefault { [] as Set<String> }
-
-                    for (configuration in [projectConfigurations.minecraft, projectConfigurations.minecraftDeps]) {
-                        for (dependency in configuration.allDependencies) {
-                            if (dependency.group != null) {
-                                badArtifacts[dependency.group] += dependency.name
-                            }
-                        }
-                    }
-
-                    // example for specifying extra stuff to ignore
-                    // badArtifacts["org.example.group"] += "artifactName"
-
-                    def pomNode = asNode()
-
-                    pomNode.dependencies.'*'.findAll() {
-                        badArtifacts[it.groupId.text()].contains(it.artifactId.text())
-                    }.each() {
-                        it.parent().remove(it)
-                    }
-                }
-            }
-        }
-
-        repositories {
+        if (publishToGitlab.toBoolean() && serverUrl != null && projectId != null && jobToken != null) {
             maven {
                 url "${serverUrl}/api/v4/projects/${projectId}/packages/maven"
 
